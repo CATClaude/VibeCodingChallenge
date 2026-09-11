@@ -25,10 +25,14 @@ fi
 
 PORT="${VLLM_PORT:-8000}"
 MODEL_NAME="${MODEL:-quocbao747/Qwen3.8-27B-OBLITERATED-W4A16-24GB}"
+MAX_TOKENS="${MAX_TOKENS:-512}"
+TEMPERATURE="${TEMPERATURE:-0.2}"
 
 REQUEST_JSON="$(jq -n \
   --arg model "$MODEL_NAME" \
   --arg prompt "$PROMPT" \
+  --argjson max_tokens "$MAX_TOKENS" \
+  --argjson temperature "$TEMPERATURE" \
   '{
     model: $model,
     messages: [
@@ -37,23 +41,27 @@ REQUEST_JSON="$(jq -n \
         content: $prompt
       }
     ],
-    temperature: 0.2,
-    max_tokens: 512
+    temperature: $temperature,
+    max_tokens: $max_tokens,
+    stream: true
   }'
 )"
 
-RESPONSE="$(curl --fail-with-body -sS \
+# Stream tokens as soon as vLLM emits them.
+curl --fail-with-body -N -sS \
   "http://127.0.0.1:${PORT}/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -d "$REQUEST_JSON"
-)"
+  -d "$REQUEST_JSON" \
+| while IFS= read -r line; do
+    [[ "$line" == data:* ]] || continue
+    data="${line#data: }"
 
-CONTENT="$(jq -r '.choices[0].message.content // empty' <<<"$RESPONSE")"
+    [[ "$data" == "[DONE]" ]] && break
 
-if [[ -z "$CONTENT" ]]; then
-  echo "ERROR: No assistant content returned." >&2
-  echo "$RESPONSE" | jq . >&2 || echo "$RESPONSE" >&2
-  exit 1
-fi
+    chunk="$(printf '%s' "$data" | jq -r '.choices[0].delta.content // empty' 2>/dev/null || true)"
+    if [[ -n "$chunk" ]]; then
+      printf '%s' "$chunk"
+    fi
+  done
 
-printf '%s\n' "$CONTENT"
+printf '\n'
