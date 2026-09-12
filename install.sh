@@ -69,11 +69,11 @@ WORKDIR /workspace
 RUN git clone --recursive https://github.com/FunAudioLLM/CosyVoice.git
 ENV PATH=/opt/conda/envs/cosyvoice/bin:/opt/conda/bin:$PATH
 ENV PYTHONPATH=/workspace/CosyVoice:/workspace/CosyVoice/third_party/Matcha-TTS
-RUN python -m pip install --no-cache-dir --upgrade \
+RUN python -m pip install --no-cache-dir --timeout 120 --retries 10 --resume-retries 10 --upgrade \
       'pip<25.2' 'setuptools<81' wheel wheel-stub packaging 'numpy<2' cython && \
     cd /workspace/CosyVoice && \
-    pip install --no-cache-dir --no-build-isolation -r requirements.txt && \
-    pip install --no-cache-dir fastapi 'uvicorn[standard]' python-multipart huggingface_hub piper-tts
+    pip install --no-cache-dir --no-build-isolation --timeout 120 --retries 10 --resume-retries 10 -r requirements.txt && \
+    pip install --no-cache-dir --timeout 120 --retries 10 --resume-retries 10 fastapi 'uvicorn[standard]' python-multipart huggingface_hub piper-tts
 COPY app.py /app/app.py
 COPY bootstrap.py /app/bootstrap.py
 WORKDIR /app
