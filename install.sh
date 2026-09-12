@@ -9,6 +9,7 @@ for cmd in docker nvidia-smi; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Fehlt: $cmd" >&2; exit 1; }
 done
 
+docker compose version >/dev/null 2>&1 || { echo "Fehlt: docker compose" >&2; exit 1; }
 nvidia-smi >/dev/null
 
 echo "Erzeuge CosyVoice3-Dateien in $DEST"
@@ -31,6 +32,9 @@ services:
       VOICE_ID: "de_thorsten"
       VOICE_DIR: "/voices"
       PORT: "8188"
+      HF_HUB_DISABLE_XET: "1"
+      HF_HUB_DOWNLOAD_TIMEOUT: "120"
+      HF_HUB_ETAG_TIMEOUT: "30"
     volumes:
       - cosyvoice_models:/models
       - cosyvoice_voices:/voices
@@ -84,6 +88,7 @@ DOCKER
 cat > bootstrap.py <<'PY'
 import os
 import subprocess
+import time
 from pathlib import Path
 from huggingface_hub import snapshot_download, hf_hub_download
 
@@ -97,15 +102,41 @@ VOICE_DIR.mkdir(parents=True, exist_ok=True)
 Path("/output").mkdir(parents=True, exist_ok=True)
 subprocess.run(["nvidia-smi"], check=True)
 
-if not any(MODEL_DIR.iterdir()):
-    snapshot_download(repo_id=MODEL_REPO, local_dir=str(MODEL_DIR), local_dir_use_symlinks=False)
+
+def retry(label, func, attempts=6, delay=15):
+    last = None
+    for attempt in range(1, attempts + 1):
+        try:
+            print(f"{label}: Versuch {attempt}/{attempts}", flush=True)
+            return func()
+        except Exception as exc:
+            last = exc
+            print(f"{label}: Fehler: {exc}", flush=True)
+            if attempt < attempts:
+                print(f"Neuer Versuch in {delay} Sekunden ...", flush=True)
+                time.sleep(delay)
+    raise last
+
+
+# Always call snapshot_download. Hugging Face reuses complete files and resumes/replaces
+# missing or partial files in the persistent model volume.
+retry(
+    "CosyVoice-Modell",
+    lambda: snapshot_download(repo_id=MODEL_REPO, local_dir=str(MODEL_DIR)),
+)
 
 onnx = VOICE_DIR / "de_DE-thorsten-high.onnx"
 jsonf = VOICE_DIR / "de_DE-thorsten-high.onnx.json"
 if not onnx.exists():
-    hf_hub_download("Thorsten-Voice/Piper", "de_DE-thorsten-high.onnx", local_dir=str(VOICE_DIR))
+    retry(
+        "Thorsten ONNX",
+        lambda: hf_hub_download("Thorsten-Voice/Piper", "de_DE-thorsten-high.onnx", local_dir=str(VOICE_DIR)),
+    )
 if not jsonf.exists():
-    hf_hub_download("Thorsten-Voice/Piper", "de_DE-thorsten-high.onnx.json", local_dir=str(VOICE_DIR))
+    retry(
+        "Thorsten Config",
+        lambda: hf_hub_download("Thorsten-Voice/Piper", "de_DE-thorsten-high.onnx.json", local_dir=str(VOICE_DIR)),
+    )
 
 wav = VOICE_DIR / f"{VOICE_ID}.wav"
 txt = VOICE_DIR / f"{VOICE_ID}.txt"
@@ -196,23 +227,69 @@ PY
 cat > test.sh <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+
+BASE_URL="${BASE_URL:-http://127.0.0.1:8188}"
+WAIT_SECONDS="${WAIT_SECONDS:-900}"
 mkdir -p output
-curl -fsS http://127.0.0.1:8188/health
+
+echo "Warte auf CosyVoice unter $BASE_URL ..."
+start=$(date +%s)
+while ! curl -fsS "$BASE_URL/health" >/tmp/cosyvoice-health.json 2>/dev/null; do
+  now=$(date +%s)
+  elapsed=$((now - start))
+  if (( elapsed >= WAIT_SECONDS )); then
+    echo "FEHLER: CosyVoice ist nach ${WAIT_SECONDS}s nicht bereit." >&2
+    docker compose ps >&2 || true
+    docker compose logs --tail=120 cosyvoice >&2 || true
+    exit 1
+  fi
+  printf '\rNoch nicht bereit ... %3ds / %3ds' "$elapsed" "$WAIT_SECONDS"
+  sleep 5
+done
+printf '\nBereit: '
+cat /tmp/cosyvoice-health.json
 printf '\n'
-curl -fsS http://127.0.0.1:8188/v1/audio/speech \
+
+HTTP_CODE=$(curl -sS --max-time 600 -o output/test-de.wav -w '%{http_code}' \
+  "$BASE_URL/v1/audio/speech" \
   -H 'Content-Type: application/json' \
-  -d '{"model":"cosyvoice3","voice":"de_thorsten","input":"Hallo. Das ist ein deutscher Test von CosyVoice drei auf der RTX 4070 Ti Super.","response_format":"wav","speed":1.0}' \
-  --output output/test-de.wav
-ffprobe -v error -show_entries format=duration,size -show_entries stream=codec_name,sample_rate,channels -of default=noprint_wrappers=1 output/test-de.wav
+  -d '{"model":"cosyvoice3","voice":"de_thorsten","input":"Hallo. Das ist ein deutscher Test von CosyVoice drei auf der RTX 4070 Ti Super.","response_format":"wav","speed":1.0}')
+
+if [[ "$HTTP_CODE" != "200" ]]; then
+  echo "FEHLER: TTS-Request lieferte HTTP $HTTP_CODE" >&2
+  if [[ -s output/test-de.wav ]]; then
+    echo "Antwort:" >&2
+    cat output/test-de.wav >&2 || true
+  fi
+  docker compose logs --tail=120 cosyvoice >&2 || true
+  exit 1
+fi
+
+if [[ ! -s output/test-de.wav ]]; then
+  echo "FEHLER: output/test-de.wav ist leer." >&2
+  exit 1
+fi
+
+if command -v ffprobe >/dev/null 2>&1; then
+  ffprobe -v error \
+    -show_entries format=duration,size \
+    -show_entries stream=codec_name,sample_rate,channels \
+    -of default=noprint_wrappers=1 \
+    output/test-de.wav
+else
+  echo "Hinweis: ffprobe ist auf dem Host nicht installiert; WAV-Pruefung wird uebersprungen."
+fi
+
 echo "SUCCESS: $(realpath output/test-de.wav)"
 SH
 chmod +x test.sh
 
 echo "Baue und starte CosyVoice3..."
-docker compose up -d --build
+docker compose up -d --build --force-recreate
 
 echo
-echo "Gestartet. Logs:   cd $DEST && docker compose logs -f"
+echo "Gestartet. Der erste Start kann wegen des Modelldownloads dauern."
+echo "Logs:              cd $DEST && docker compose logs -f cosyvoice"
 echo "Health:            http://127.0.0.1:8188/health"
 echo "Test:              cd $DEST && ./test.sh"
 echo "API:               http://127.0.0.1:8188/v1/audio/speech"
