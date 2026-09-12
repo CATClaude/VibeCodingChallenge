@@ -118,8 +118,6 @@ def retry(label, func, attempts=6, delay=15):
     raise last
 
 
-# Always call snapshot_download. Hugging Face reuses complete files and resumes/replaces
-# missing or partial files in the persistent model volume.
 retry(
     "CosyVoice-Modell",
     lambda: snapshot_download(repo_id=MODEL_REPO, local_dir=str(MODEL_DIR)),
@@ -140,9 +138,17 @@ if not jsonf.exists():
 
 wav = VOICE_DIR / f"{VOICE_ID}.wav"
 txt = VOICE_DIR / f"{VOICE_ID}.txt"
-prompt = "Willkommen. Dies ist eine klare und natuerliche deutsche Referenzstimme fuer die lokale Sprachausgabe."
+prompt = (
+    "Guten Tag. Dies ist eine klare, ruhige und natuerliche deutsche Referenzstimme. "
+    "Sie spricht Hochdeutsch mit deutlicher Aussprache, normalem Tempo und natuerlicher Betonung. "
+    "Zahlen, Abkuerzungen und Satzzeichen werden sorgfaeltig ausgesprochen."
+)
 if not wav.exists():
-    subprocess.run(["piper", "--model", str(onnx), "--config", str(jsonf), "--output_file", str(wav)], input=prompt.encode("utf-8"), check=True)
+    subprocess.run(
+        ["piper", "--model", str(onnx), "--config", str(jsonf), "--output_file", str(wav)],
+        input=prompt.encode("utf-8"),
+        check=True,
+    )
 txt.write_text(prompt, encoding="utf-8")
 
 os.execvp("uvicorn", ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", PORT])
@@ -160,7 +166,6 @@ from cosyvoice.cli.cosyvoice import AutoModel
 MODEL_DIR = os.getenv("MODEL_DIR", "/models/Fun-CosyVoice3-0.5B-2512")
 VOICE_DIR = os.getenv("VOICE_DIR", "/voices")
 VOICE_ID = os.getenv("VOICE_ID", "de_thorsten")
-PROMPT_PREFIX = "You are a helpful assistant.<|endofprompt|>"
 VOICE_WAV = f"{VOICE_DIR}/{VOICE_ID}.wav"
 VOICE_TXT = f"{VOICE_DIR}/{VOICE_ID}.txt"
 
@@ -168,11 +173,6 @@ app = FastAPI(title="CosyVoice3")
 lock = threading.Lock()
 cosyvoice = AutoModel(model_dir=MODEL_DIR)
 prompt_text = open(VOICE_TXT, encoding="utf-8").read().strip()
-try:
-    cosyvoice.add_zero_shot_spk(prompt_text, VOICE_WAV, VOICE_ID)
-    cached_voice = True
-except Exception:
-    cached_voice = False
 
 class SpeechRequest(BaseModel):
     model: str = "cosyvoice3"
@@ -183,7 +183,7 @@ class SpeechRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": "cosyvoice3", "voice": VOICE_ID}
+    return {"status": "ok", "model": "cosyvoice3", "voice": VOICE_ID, "language": "de"}
 
 @app.get("/v1/models")
 def models():
@@ -201,12 +201,19 @@ def speech(req: SpeechRequest):
         raise HTTPException(400, "Only wav is supported")
     if not (0.5 <= req.speed <= 2.0):
         raise HTTPException(400, "speed must be between 0.5 and 2.0")
-    text = PROMPT_PREFIX + req.input
+
+    text = req.input.strip()
+    if not text:
+        raise HTTPException(400, "input must not be empty")
+
     with lock, torch.inference_mode():
-        if cached_voice:
-            chunks = cosyvoice.inference_zero_shot(text, "", "", zero_shot_spk_id=VOICE_ID, stream=False, speed=req.speed)
-        else:
-            chunks = cosyvoice.inference_zero_shot(text, prompt_text, VOICE_WAV, stream=False, speed=req.speed)
+        chunks = cosyvoice.inference_zero_shot(
+            text,
+            prompt_text,
+            VOICE_WAV,
+            stream=False,
+            speed=req.speed,
+        )
         audio_parts = []
         sr = 24000
         for out in chunks:
@@ -217,10 +224,14 @@ def speech(req: SpeechRequest):
         if not audio_parts:
             raise HTTPException(500, "No audio generated")
         audio = torch.cat(audio_parts).clamp(-1, 1).numpy()
+
     pcm = (audio * 32767.0).astype(np.int16).tobytes()
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
-        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr); w.writeframes(pcm)
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(pcm)
     return Response(buf.getvalue(), media_type="audio/wav")
 PY
 
@@ -253,7 +264,7 @@ printf '\n'
 HTTP_CODE=$(curl -sS --max-time 600 -o output/test-de.wav -w '%{http_code}' \
   "$BASE_URL/v1/audio/speech" \
   -H 'Content-Type: application/json' \
-  -d '{"model":"cosyvoice3","voice":"de_thorsten","input":"Hallo. Das ist ein deutscher Test von CosyVoice drei auf der RTX 4070 Ti Super.","response_format":"wav","speed":1.0}')
+  -d '{"model":"cosyvoice3","voice":"de_thorsten","input":"Guten Tag. Dies ist ein deutscher Sprachtest. Die Aussprache soll klar, natuerlich und gut verstaendlich sein.","response_format":"wav","speed":1.0}')
 
 if [[ "$HTTP_CODE" != "200" ]]; then
   echo "FEHLER: TTS-Request lieferte HTTP $HTTP_CODE" >&2
