@@ -84,6 +84,18 @@ def asset_names(pid:str):
     d=pdir(pid)/"assets"
     return sorted([f.name for f in d.iterdir() if f.is_file()]) if d.exists() else []
 
+def embed_assets(pid:str,html:str):
+    assets=pdir(pid)/"assets"
+    if not assets.exists(): return html
+    for f in assets.iterdir():
+        if not f.is_file(): continue
+        mime=mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+        data=base64.b64encode(f.read_bytes()).decode("ascii")
+        uri=f"data:{mime};base64,{data}"
+        html=html.replace(f'src="assets/{f.name}"',f'src="{uri}"')
+        html=html.replace(f"src='assets/{f.name}'",f"src='{uri}'")
+    return html
+
 def sources(pid:str):
     u=pdir(pid)/"uploads"; parts=[]
     for f in sorted(u.glob("*")):
@@ -213,6 +225,7 @@ Anforderungen: Hero, Nutzen, Problem/Lösung, Leistungsblöcke, belegbare Vertra
     html=await chat(req.ollama,system,user,.3)
     html=re.sub(r"^\s*```(?:html)?\s*","",html,flags=re.I); html=re.sub(r"\s*```\s*$","",html)
     if "<html" not in html.lower(): raise HTTPException(502,"Modell erzeugte kein vollständiges HTML")
+    html=embed_assets(pid,html)
     (pdir(pid)/"site.html").write_text(html,"utf-8"); m["has_site"]=True; save_meta(pid,m)
     return {"ok":True}
 
