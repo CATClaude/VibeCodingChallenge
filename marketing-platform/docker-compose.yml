@@ -5,6 +5,9 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:latest}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-25}
+      OLLAMA_RETRIES: ${OLLAMA_RETRIES:-2}
+      OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-32768}
+    restart: unless-stopped
     volumes:
       - ./data:/app/data
     ports:
@@ -14,6 +17,7 @@ services:
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     environment:
       VITE_API_BASE_URL: http://localhost:8000
     ports:
