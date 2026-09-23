@@ -1,5 +1,5 @@
 import React,{useEffect,useState}from"react";import{createRoot}from"react-dom/client";import"./styles.css";
-const API=import.meta.env.VITE_API_BASE_URL||"http://localhost:8000";
+const API=import.meta.env.VITE_API_BASE_URL||"";
 async function j(url,opt={}){const r=await fetch(API+url,opt);if(!r.ok)throw new Error((await r.text())||r.statusText);return r.json()}
 function App(){const[projects,setProjects]=useState([]),[sel,setSel]=useState(null),[name,setName]=useState(""),[aud,setAud]=useState(""),[goal,setGoal]=useState("Leads und Verkäufe"),[tone,setTone]=useState("professionell, klar, vertrauenswürdig"),[base,setBase]=useState("http://host.docker.internal:11434"),[model,setModel]=useState("qwen3:latest"),[msg,setMsg]=useState("Bereit"),[brief,setBrief]=useState("");
 const load=async()=>{const p=await j("/api/projects");setProjects(p);if(sel){const n=p.find(x=>x.id===sel.id);if(n)setSel(n)}};useEffect(()=>{load()},[]);
