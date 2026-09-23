@@ -57,8 +57,14 @@ def sources(pid:str):
             if t: parts.append(f"--- QUELLE: {f.name} ---\n{t}")
     return "\n\n".join(parts)[:120000]
 
+def normalize_base_url(url:str):
+    url=(url or BASE).strip().rstrip("/")
+    url=re.sub(r"^http://localhost(?=[:/]|$)","http://host.docker.internal",url,flags=re.I)
+    url=re.sub(r"^http://127\.0\.0\.1(?=[:/]|$)","http://host.docker.internal",url,flags=re.I)
+    return url
+
 async def chat(cfg:Ollama,system:str,user:str,temp=.35):
-    url=cfg.base_url.rstrip("/")+"/api/chat"
+    url=normalize_base_url(cfg.base_url)+"/api/chat"
     async with httpx.AsyncClient(timeout=300) as c:
         try:
             r=await c.post(url,json={"model":cfg.model,"stream":False,"messages":[{"role":"system","content":system},{"role":"user","content":user}],"options":{"temperature":temp}})
@@ -76,9 +82,11 @@ def health(): return {"ok":True,"default_model":MODEL,"default_base_url":BASE}
 async def test_ollama(cfg:Ollama):
     async with httpx.AsyncClient(timeout=10) as c:
         try:
-            r=await c.get(cfg.base_url.rstrip("/")+"/api/tags"); r.raise_for_status()
-            return {"ok":True,"models":[m.get("name") for m in r.json().get("models",[])]}
-        except Exception as e: raise HTTPException(502,str(e))
+            resolved=normalize_base_url(cfg.base_url)
+            r=await c.get(resolved+"/api/tags"); r.raise_for_status()
+            return {"ok":True,"resolved_url":resolved,"models":[m.get("name") for m in r.json().get("models",[])]}
+        except Exception as e:
+            raise HTTPException(502,f"Ollama unter {normalize_base_url(cfg.base_url)} nicht erreichbar: {e}. Falls Ollama auf diesem Host läuft, starte es mit OLLAMA_HOST=0.0.0.0:11434.")
 
 @app.get("/api/projects")
 def list_projects():
