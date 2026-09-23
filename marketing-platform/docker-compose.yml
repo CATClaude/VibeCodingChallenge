@@ -1,0 +1,22 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:latest}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-25}
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
