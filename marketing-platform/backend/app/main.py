@@ -96,6 +96,44 @@ def embed_assets(pid:str,html:str):
         html=html.replace(f"src='assets/{f.name}'",f"src='{uri}'")
     return html
 
+def clean_html(text:str):
+    text=text.strip()
+    text=re.sub(r"^\s*```(?:html)?\s*","",text,flags=re.I)
+    text=re.sub(r"\s*```\s*$","",text)
+    start=re.search(r"(?is)<!doctype\s+html|<html\b",text)
+    if start: text=text[start.start():]
+    return text.strip()
+
+def html_is_complete(html:str):
+    h=html.lower()
+    required=["<html","<head","</head>","<body","</body>","</html>"]
+    return all(x in h for x in required)
+
+def minimally_close_html(html:str):
+    h=html.lower()
+    if "<html" not in h:
+        return html
+    if "<body" in h and "</body>" not in h:
+        html += "\n</body>"
+    if "</html>" not in html.lower():
+        html += "\n</html>"
+    return html
+
+async def repair_html(cfg:Ollama,html:str,brief:str,image_paths:list[str]):
+    system="Du reparierst unvollständiges HTML. Gib ausschließlich ein vollständiges valides HTML5-Dokument zurück. Bewahre vorhandene Inhalte und das Design, ergänze nur fehlende Teile. Kein Markdown."
+    user=f"""Die folgende Landingpage wurde unvollständig ausgegeben oder abgebrochen. Vervollständige sie zu einem vollständigen Dokument mit <!doctype html>, <html>, <head>, <body> und allen schließenden Tags. Behalte vorhandene Texte, CSS, Bildpfade und Struktur möglichst unverändert.
+
+MARKETING-BRIEF:
+{brief[:18000]}
+
+ERLAUBTE BILDPFADE:
+{chr(10).join(image_paths) if image_paths else "keine"}
+
+UNVOLLSTÄNDIGES HTML:
+{html[:70000]}
+"""
+    return clean_html(await chat(cfg,system,user,.2,num_predict=12000))
+
 def sources(pid:str):
     u=pdir(pid)/"uploads"; parts=[]
     for f in sorted(u.glob("*")):
@@ -110,9 +148,9 @@ def normalize_base_url(url:str):
     url=re.sub(r"^http://127\.0\.0\.1(?=[:/]|$)","http://host.docker.internal",url,flags=re.I)
     return url
 
-async def chat(cfg:Ollama,system:str,user:str,temp=.35):
+async def chat(cfg:Ollama,system:str,user:str,temp=.35,num_predict:int=6000):
     url=normalize_base_url(cfg.base_url)+"/api/chat"
-    payload={"model":cfg.model,"stream":False,"keep_alive":-1,"messages":[{"role":"system","content":system},{"role":"user","content":user}],"options":{"temperature":temp,"num_ctx":OLLAMA_NUM_CTX}}
+    payload={"model":cfg.model,"stream":False,"keep_alive":-1,"messages":[{"role":"system","content":system},{"role":"user","content":user}],"options":{"temperature":temp,"num_ctx":OLLAMA_NUM_CTX,"num_predict":num_predict}}
     last=None
     async with OLLAMA_LOCK:
         for attempt in range(OLLAMA_RETRIES+1):
@@ -194,7 +232,7 @@ QUELLEN:
 {src}
 
 Behandle: Kernangebot, Zielgruppen/Jobs-to-be-done, Pain Points, Nutzenargumente, Differenzierung, Belege, Einwände, Message Hierarchy, CTA, SEO (Intent/Keywords/Meta), Landingpage-Struktur und offene Punkte. Berücksichtige, dass Bildmaterial aus den Quelldokumenten für die Website verfügbar sein kann."""
-    b=await chat(req.ollama,system,user,.4)
+    b=await chat(req.ollama,system,user,.4,num_predict=6000)
     (pdir(pid)/"brief.md").write_text(b,"utf-8"); m["has_brief"]=True; save_meta(pid,m)
     return {"brief":b}
 
@@ -222,12 +260,18 @@ MARKETING-BRIEF:
 {brief}
 
 Anforderungen: Hero, Nutzen, Problem/Lösung, Leistungsblöcke, belegbare Vertrauenselemente falls vorhanden, CTA, FAQ, Footer, Meta-Title und Meta-Description. Keine externen Bilder. Falls unter VERFÜGBARE BILDER Pfade stehen, verwende passende davon mit <img src="assets/DATEINAME"> und erfinde keine anderen Bildpfade. Wenn keine Bilder vorhanden sind, nutze CSS-Flächen/Shapes statt Fake-Produktfotos.\n\nVERFÜGBARE BILDER:\n{chr(10).join(image_paths) if image_paths else "keine"}"""
-    html=await chat(req.ollama,system,user,.3)
-    html=re.sub(r"^\s*```(?:html)?\s*","",html,flags=re.I); html=re.sub(r"\s*```\s*$","",html)
-    if "<html" not in html.lower(): raise HTTPException(502,"Modell erzeugte kein vollständiges HTML")
+    html=clean_html(await chat(req.ollama,system,user,.3,num_predict=12000))
+    repaired=False
+    if not html_is_complete(html):
+        html=await repair_html(req.ollama,html,brief,image_paths)
+        repaired=True
+    if not html_is_complete(html):
+        html=minimally_close_html(html)
+    if not html_is_complete(html):
+        raise HTTPException(502,"Das Modell konnte auch nach automatischer Reparatur keine vollständige Landingpage erzeugen.")
     html=embed_assets(pid,html)
     (pdir(pid)/"site.html").write_text(html,"utf-8"); m["has_site"]=True; save_meta(pid,m)
-    return {"ok":True}
+    return {"ok":True,"repaired":repaired}
 
 @app.get("/api/projects/{pid}/assets/{name}")
 def get_asset(pid:str,name:str):
