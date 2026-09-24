@@ -131,17 +131,35 @@ async def concept(payload:dict):
     except (TypeError, ValueError):
         slide_count = 10
     hints = str(settings.get("hints") or "").strip()[:8000]
-    prompt=(
+    cfg = payload.get("model_api", {})
+    base_prompt = (
         "KURSVORGABEN:\n"
-        f"- Gewünschte Länge: ungefähr {slide_count} Slides/Lerneinheiten. "
-        "Erzeuge insgesamt möglichst genau diese Anzahl an sections über alle Module hinweg.\n"
+        f"- Erzeuge EXAKT {slide_count} Inhalts-Slides. Nicht mehr und nicht weniger.\n"
+        "- Keine Kapitel, Module oder Unterkapitel erzeugen. Nur einzelne Slides.\n"
+        "- Die Abkürzungs-Slide wird später automatisch ergänzt und zählt NICHT zu dieser Zahl.\n"
         f"- Weitere Hinweise: {hints if hints else 'Keine zusätzlichen Hinweise.'}\n\n"
-        "ANALYSE:\n"+json.dumps(payload.get("analysis"),ensure_ascii=False,indent=2)+
-        "\n\nQUELLEN:\n"+payload.get("source_text","")[:150000]
+        "ANALYSE:\n" + json.dumps(payload.get("analysis"), ensure_ascii=False, indent=2) +
+        "\n\nQUELLEN:\n" + payload.get("source_text", "")[:150000]
     )
-    out=clean(llm_chat(payload.get("model_api",{}),read_skill("02_course_concept.md"),prompt))
-    try:return {"concept":json.loads(out)}
-    except Exception:return {"concept":{"raw":out}}
+    last = None
+    for attempt in range(3):
+        correction = "" if attempt == 0 else (
+            f"\n\nKORREKTUR: Gib zwingend genau {slide_count} Objekte im Array slides zurück."
+        )
+        out = clean(llm_chat(cfg, read_skill("02_course_concept.md"), base_prompt + correction))
+        try:
+            data = json.loads(out)
+            slides = data.get("slides", [])
+            if isinstance(slides, list) and len(slides) == slide_count:
+                for i, slide in enumerate(slides, 1):
+                    slide["id"] = f"slide_{i}"
+                    slide["number"] = i
+                data["slides"] = slides
+                return {"concept": data}
+            last = data
+        except Exception:
+            last = {"raw": out}
+    raise HTTPException(502, f"Das Modell hat nach 3 Versuchen nicht exakt {slide_count} Slides erzeugt.")
 
 @app.post("/api/expand-section")
 async def expand_section(payload:dict):
@@ -165,13 +183,37 @@ async def quiz(payload:dict):
 
 @app.post("/api/generate-speech")
 async def generate_speech(payload:dict):
-    prompt=f"KAPITEL: {payload.get('title','')}\n\nLERNINHALT:\n{payload.get('html','')}\n\nErzeuge daraus einen natürlichen Sprechtext."
+    prompt=f"SLIDE: {payload.get('title','')}\n\nLERNINHALT:\n{payload.get('html','')}\n\nErzeuge daraus einen natürlichen Sprechtext."
     out=clean(llm_chat(payload.get("model_api",{}),read_skill("05_speech_script.md"),prompt))
     return {"speech_text":out}
 
-SCORM_API='''var scorm={api:null,find:function(w){var n=0;while(w&&!w.API&&w.parent&&w.parent!==w&&n<10){w=w.parent;n++;}return w&&w.API?w.API:null;},init:function(){this.api=this.find(window);if(this.api){try{this.api.LMSInitialize("");var s=this.api.LMSGetValue("cmi.core.lesson_status");if(!s||s==="not attempted")this.api.LMSSetValue("cmi.core.lesson_status","incomplete");}catch(e){}}},finish:function(score){if(!this.api)return;try{this.api.LMSSetValue("cmi.core.score.raw",String(score));this.api.LMSSetValue("cmi.core.score.min","0");this.api.LMSSetValue("cmi.core.score.max","100");this.api.LMSSetValue("cmi.core.lesson_status",score>=70?"passed":"completed");this.api.LMSCommit("");}catch(e){}},close:function(){if(this.api){try{this.api.LMSFinish("");}catch(e){}}}};window.addEventListener("load",function(){scorm.init();});window.addEventListener("beforeunload",function(){scorm.close();});'''
-COURSE_JS='''function gradeQuiz(){const qs=[...document.querySelectorAll(".scorm-question")];if(!qs.length){scorm.finish(100);alert("Kurs abgeschlossen.");return;}let correct=0;qs.forEach(q=>{const s=q.querySelector("input[type=radio]:checked"),fb=q.querySelector(".feedback");if(s){if(s.dataset.correct==="true"){correct++;fb.textContent="Richtig. "+(q.dataset.explanation||"");}else fb.textContent="Nicht richtig. "+(q.dataset.explanation||"");}else fb.textContent="Bitte eine Antwort auswählen.";});const score=Math.round(correct/qs.length*100);document.getElementById("scoreOut").textContent=`Ergebnis: ${correct}/${qs.length} (${score} %)`;scorm.finish(score);}'''
-COURSE_CSS=''':root{--bg:#f4f6fa;--text:#1f2937;--accent:#2457d6;--border:#dbe2ea}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;line-height:1.65}header{background:linear-gradient(135deg,#172f66,#3275e8);color:#fff;padding:38px 20px}header>div,main{width:min(980px,calc(100% - 30px));margin:auto}main{background:#fff;margin-top:24px;margin-bottom:50px;border:1px solid var(--border);border-radius:18px;padding:30px}nav{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--border);padding:10px 16px;z-index:5;overflow:auto;white-space:nowrap}nav a{display:inline-block;margin-right:14px;color:var(--accent);text-decoration:none}section{scroll-margin-top:65px;padding-top:6px}.sourcebox,.note,.example{padding:12px 14px;border-radius:10px;margin:14px 0}.sourcebox{background:#f8fafc;border:1px solid var(--border);font-size:.9rem;color:#64748b}.note{background:#eef3ff;border-left:5px solid var(--accent)}.example{background:#ecf9f1;border-left:5px solid #16804c}.chapter-audio{width:100%;margin:12px 0 18px}.abbr-table{width:100%;border-collapse:collapse;margin:14px 0}.abbr-table th,.abbr-table td{border:1px solid var(--border);padding:8px;text-align:left}.quiz{margin-top:30px;border-top:1px solid var(--border);padding-top:20px}.scorm-question{margin:20px 0;padding:16px;border:1px solid var(--border);border-radius:12px}.scorm-question label{display:block;padding:6px}.feedback{margin-top:8px;font-weight:600}button{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer}@media(max-width:700px){main{padding:18px}}'''
+SCORM_API='''var scorm={api:null,find:function(w){var n=0;while(w&&!w.API&&w.parent&&w.parent!==w&&n<10){w=w.parent;n++;}return w&&w.API?w.API:null;},init:function(){this.api=this.find(window);if(this.api){try{this.api.LMSInitialize("");var s=this.api.LMSGetValue("cmi.core.lesson_status");if(!s||s==="not attempted")this.api.LMSSetValue("cmi.core.lesson_status","incomplete");}catch(e){}}},setLocation:function(i){if(this.api){try{this.api.LMSSetValue("cmi.core.lesson_location",String(i));this.api.LMSCommit("");}catch(e){}}},getLocation:function(){if(!this.api)return 0;try{return parseInt(this.api.LMSGetValue("cmi.core.lesson_location")||"0",10)||0;}catch(e){return 0;}},finish:function(score){if(!this.api)return;try{this.api.LMSSetValue("cmi.core.score.raw",String(score));this.api.LMSSetValue("cmi.core.score.min","0");this.api.LMSSetValue("cmi.core.score.max","100");this.api.LMSSetValue("cmi.core.lesson_status",score>=70?"passed":"completed");this.api.LMSCommit("");}catch(e){}},close:function(){if(this.api){try{this.api.LMSFinish("");}catch(e){}}}};window.addEventListener("load",function(){scorm.init();});window.addEventListener("beforeunload",function(){scorm.close();});'''
+COURSE_JS='''var currentPage=0;
+function pages(){return Array.from(document.querySelectorAll(".course-page"));}
+function showPage(i){
+ var all=pages(); if(!all.length)return;
+ currentPage=Math.max(0,Math.min(i,all.length-1));
+ all.forEach(function(p,n){p.classList.toggle("active",n===currentPage);});
+ var c=document.getElementById("pageCounter"); if(c)c.textContent=(currentPage+1)+" / "+all.length;
+ var bar=document.getElementById("progressBar"); if(bar)bar.style.width=(((currentPage+1)/all.length)*100)+"%";
+ var prev=document.getElementById("prevPage"),next=document.getElementById("nextPage");
+ if(prev)prev.disabled=currentPage===0;
+ if(next)next.disabled=currentPage===all.length-1;
+ scorm.setLocation(currentPage);
+ window.scrollTo(0,0);
+}
+function nextPage(){showPage(currentPage+1);}
+function prevPage(){showPage(currentPage-1);}
+function gradeQuiz(){
+ const qs=[...document.querySelectorAll(".scorm-question")];
+ if(!qs.length){scorm.finish(100);return;}
+ let correct=0;
+ qs.forEach(q=>{const s=q.querySelector("input[type=radio]:checked"),fb=q.querySelector(".feedback");if(s){if(s.dataset.correct==="true"){correct++;fb.textContent="Richtig. "+(q.dataset.explanation||"");}else fb.textContent="Nicht richtig. "+(q.dataset.explanation||"");}else fb.textContent="Bitte eine Antwort auswählen.";});
+ const score=Math.round(correct/qs.length*100);document.getElementById("scoreOut").textContent="Ergebnis: "+correct+"/"+qs.length+" ("+score+" %)";scorm.finish(score);
+}
+window.addEventListener("load",function(){setTimeout(function(){showPage(scorm.getLocation());},0);});
+'''
+COURSE_CSS=''':root{--bg:#eef2f7;--text:#1f2937;--accent:#2457d6;--border:#dbe2ea}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;line-height:1.6}header{background:linear-gradient(135deg,#172f66,#3275e8);color:#fff;padding:22px}header>div,.course-shell{width:min(1000px,calc(100% - 28px));margin:auto}.course-shell{margin-top:20px;margin-bottom:30px}.progress{height:7px;background:#dfe5ed;border-radius:999px;overflow:hidden}.progress>div{height:100%;background:var(--accent);width:0}.course-page{display:none;min-height:560px;background:#fff;border:1px solid var(--border);border-radius:16px;padding:32px;margin-top:12px}.course-page.active{display:block}.slide-kicker{color:#64748b;font-size:.9rem;font-weight:700}.chapter-audio{width:100%;margin:12px 0 18px}.abbr-table{width:100%;border-collapse:collapse}.abbr-table th,.abbr-table td{border:1px solid var(--border);padding:9px;text-align:left}.scorm-question{margin:18px 0;padding:14px;border:1px solid var(--border);border-radius:10px}.scorm-question label{display:block;padding:6px}.feedback{font-weight:650;margin-top:8px}.course-nav{display:flex;align-items:center;justify-content:space-between;margin-top:12px}.course-nav button,.scorm-question button{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:10px 15px;font-weight:700;cursor:pointer}.course-nav button:disabled{opacity:.4}.counter{font-weight:700}@media(max-width:700px){.course-page{padding:18px;min-height:480px}}'''
 
 def course_plaintext(sections):
     parts = []
@@ -219,6 +261,11 @@ def build_abbreviation_directory(sections, model_api):
     except Exception:
         return [{"abbr": a, "meaning": "Im Kursmaterial nicht eindeutig ausgeschrieben"} for a in candidates]
 
+@app.post("/api/abbreviations")
+async def abbreviations(payload:dict):
+    items = build_abbreviation_directory(payload.get("sections", []), payload.get("model_api", {}))
+    return {"abbreviations": items}
+
 def render_quiz(questions):
     blocks=[]
     for i,q in enumerate(questions,1):
@@ -231,33 +278,92 @@ def render_quiz(questions):
 
 @app.post("/api/export")
 async def export_package(payload:dict):
-    title=payload.get("title","Moodle Lernkurs"); sections=payload.get("sections",[]); quiz=payload.get("quiz",[]); tts_enabled=bool(payload.get("tts_enabled")); tts_cfg=payload.get("tts_api",{})
-    course_settings = payload.get("course_settings") or {}
-    safe=re.sub(r"[^a-zA-Z0-9_-]+","_",title).strip("_") or "kurs"; outdir=WORK/(safe+"_scorm")
-    if outdir.exists():shutil.rmtree(outdir)
-    outdir.mkdir(parents=True); nav=[];body=[];extra=[]
-    for i,s in enumerate(sections,1):
-        sid=f"sec{i}"; st=str(s.get("title",f"Kapitel {i}")); nav.append(f'<a href="#{sid}">{html.escape(st)}</a>'); audio_html=""; speech=(s.get("speech_text") or "").strip()
+    title = payload.get("title", "Moodle Lernkurs")
+    sections = payload.get("sections", [])
+    quiz = payload.get("quiz", [])
+    tts_enabled = bool(payload.get("tts_enabled"))
+    tts_cfg = payload.get("tts_api", {})
+    safe = re.sub(r"[^a-zA-Z0-9_-]+", "_", title).strip("_") or "kurs"
+    outdir = WORK / (safe + "_scorm")
+    if outdir.exists():
+        shutil.rmtree(outdir)
+    outdir.mkdir(parents=True)
+
+    pages_html = []
+    extra = []
+    for i, s in enumerate(sections, 1):
+        st = str(s.get("title", f"Slide {i}"))
+        speech = (s.get("speech_text") or "").strip()
+        audio_html = ""
         if tts_enabled and speech:
-            audio_bytes,fmt=tts_call(tts_cfg,speech); ext="mp3" if fmt=="mp3" else re.sub(r"[^a-z0-9]","",fmt) or "mp3"; fn=f"audio_{i}.{ext}"; (outdir/fn).write_bytes(audio_bytes);extra.append(fn);audio_html=f'<audio class="chapter-audio" controls preload="metadata" src="{fn}"></audio>'
-        body.append(f'<section id="{sid}"><h2>{html.escape(st)}</h2>{audio_html}{s.get("html","")}</section>')
-    abbreviations = build_abbreviation_directory(sections, payload.get("model_api", {}))
-    abbr_rows = ''.join(
-        f'<tr><td><strong>{html.escape(item["abbr"])}</strong></td><td>{html.escape(item["meaning"])}</td></tr>'
-        for item in abbreviations
+            audio_bytes, fmt = tts_call(tts_cfg, speech)
+            ext = "mp3" if fmt == "mp3" else re.sub(r"[^a-z0-9]", "", fmt) or "mp3"
+            fn = f"audio_{i}.{ext}"
+            (outdir / fn).write_bytes(audio_bytes)
+            extra.append(fn)
+            audio_html = f'<audio class="chapter-audio" controls preload="metadata" src="{fn}"></audio>'
+        pages_html.append(
+            f'<section class="course-page"><div class="slide-kicker">Slide {i}</div>'
+            f'<h2>{html.escape(st)}</h2>{audio_html}{s.get("html","")}</section>'
+        )
+
+    abbreviations = payload.get("abbreviations")
+    if not isinstance(abbreviations, list):
+        abbreviations = build_abbreviation_directory(sections, payload.get("model_api", {}))
+    rows = ''.join(
+        f'<tr><td><strong>{html.escape(str(x.get("abbr","")))}</strong></td>'
+        f'<td>{html.escape(str(x.get("meaning","")))}</td></tr>' for x in abbreviations
     )
-    abbr_html = '<section id="abkuerzungen"><h2>Abkürzungsverzeichnis</h2>'
-    if abbreviations:
-        abbr_html += '<table class="abbr-table"><thead><tr><th>Abkürzung</th><th>Bedeutung</th></tr></thead><tbody>' + abbr_rows + '</tbody></table>'
-    else:
-        abbr_html += '<p>In diesem Kurs wurden keine Abkürzungen erkannt.</p>'
-    abbr_html += '</section>'
-    nav.append('<a href="#abkuerzungen">Abkürzungen</a>')
-    full='<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+f'<title>{html.escape(title)}</title><link rel="stylesheet" href="style.css"></head><body><header><div><h1>{html.escape(title)}</h1></div></header><nav>{"".join(nav)}</nav><main>{"".join(body)}{abbr_html}{render_quiz(quiz)}</main><script src="scorm.js"></script><script src="course.js"></script></body></html>'
-    file_nodes=''.join(f'<file href="{html.escape(f)}"/>' for f in extra)
-    manifest='<?xml version="1.0" encoding="UTF-8"?>\n'+f'<manifest identifier="MANIFEST-{safe}" version="1.0" xmlns="http://www.imsproject.org/xsd/imscp_rootv1p1p2" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_rootv1p2"><metadata><schema>ADL SCORM</schema><schemaversion>1.2</schemaversion></metadata><organizations default="ORG"><organization identifier="ORG"><title>{html.escape(title)}</title><item identifier="ITEM" identifierref="RES"><title>{html.escape(title)}</title></item></organization></organizations><resources><resource identifier="RES" type="webcontent" adlcp:scormtype="sco" href="index.html"><file href="index.html"/><file href="style.css"/><file href="scorm.js"/><file href="course.js"/>{file_nodes}</resource></resources></manifest>'
-    (outdir/"index.html").write_text(full,encoding="utf-8");(outdir/"style.css").write_text(COURSE_CSS,encoding="utf-8");(outdir/"scorm.js").write_text(SCORM_API,encoding="utf-8");(outdir/"course.js").write_text(COURSE_JS,encoding="utf-8");(outdir/"imsmanifest.xml").write_text(manifest,encoding="utf-8")
-    zp=WORK/(safe+"_SCORM12.zip")
+    abbr_body = (
+        '<table class="abbr-table"><thead><tr><th>Abkürzung</th><th>Bedeutung</th></tr></thead><tbody>'
+        + rows + '</tbody></table>'
+        if abbreviations else '<p>In diesem Kurs wurden keine Abkürzungen erkannt.</p>'
+    )
+    pages_html.append(
+        '<section class="course-page"><div class="slide-kicker">Zusatz-Slide</div>'
+        '<h2>Abkürzungsverzeichnis</h2>' + abbr_body + '</section>'
+    )
+
+    if quiz:
+        quiz_html = render_quiz(quiz)
+        pages_html.append(
+            '<section class="course-page"><div class="slide-kicker">Abschlusstest</div>'
+            + quiz_html + '</section>'
+        )
+
+    full = (
+        '<!doctype html><html lang="de"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f'<title>{html.escape(title)}</title><link rel="stylesheet" href="style.css"></head><body>'
+        f'<header><div><h1>{html.escape(title)}</h1></div></header>'
+        '<div class="course-shell"><div class="progress"><div id="progressBar"></div></div>'
+        + ''.join(pages_html) +
+        '<div class="course-nav"><button id="prevPage" onclick="prevPage()">← Zurück</button>'
+        '<span id="pageCounter" class="counter"></span>'
+        '<button id="nextPage" onclick="nextPage()">Weiter →</button></div></div>'
+        '<script src="scorm.js"></script><script src="course.js"></script></body></html>'
+    )
+    file_nodes = ''.join(f'<file href="{html.escape(f)}"/>' for f in extra)
+    manifest = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        f'<manifest identifier="MANIFEST-{safe}" version="1.0" '
+        'xmlns="http://www.imsproject.org/xsd/imscp_rootv1p1p2" '
+        'xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_rootv1p2">'
+        '<metadata><schema>ADL SCORM</schema><schemaversion>1.2</schemaversion></metadata>'
+        '<organizations default="ORG"><organization identifier="ORG">'
+        f'<title>{html.escape(title)}</title><item identifier="ITEM" identifierref="RES">'
+        f'<title>{html.escape(title)}</title></item></organization></organizations>'
+        '<resources><resource identifier="RES" type="webcontent" adlcp:scormtype="sco" href="index.html">'
+        '<file href="index.html"/><file href="style.css"/><file href="scorm.js"/><file href="course.js"/>'
+        f'{file_nodes}</resource></resources></manifest>'
+    )
+    (outdir/"index.html").write_text(full,encoding="utf-8")
+    (outdir/"style.css").write_text(COURSE_CSS,encoding="utf-8")
+    (outdir/"scorm.js").write_text(SCORM_API,encoding="utf-8")
+    (outdir/"course.js").write_text(COURSE_JS,encoding="utf-8")
+    (outdir/"imsmanifest.xml").write_text(manifest,encoding="utf-8")
+    zp = WORK / (safe + "_SCORM12.zip")
     with zipfile.ZipFile(zp,"w",zipfile.ZIP_DEFLATED) as z:
-        for p in outdir.iterdir():z.write(p,p.name)
+        for p in outdir.iterdir():
+            z.write(p,p.name)
     return FileResponse(zp,media_type="application/zip",filename=zp.name)
