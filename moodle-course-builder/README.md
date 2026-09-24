@@ -3,8 +3,8 @@
 Lokales KI-Autorensystem zur Erstellung fertiger SCORM-1.2-Lernpakete aus vorhandenen Dokumenten.
 
 ## Workflow
-1. Dokumente auswählen und analysieren
-2. Kurskonzept durch das Sprachmodell erzeugen
+1. Kursvorgaben festlegen: gewünschte Anzahl Slides/Lerneinheiten und weitere Hinweise; anschließend Dokumente auswählen und analysieren
+2. Kurskonzept durch das Sprachmodell unter Berücksichtigung dieser Vorgaben erzeugen
 3. Kapitel manuell oder per KI bearbeiten
 4. Optional Sprechtexte generieren und über eine TTS-API vertonen
 5. Fertiges SCORM-1.2-ZIP exportieren
@@ -36,6 +36,13 @@ Die TTS-Schnittstelle erwartet eine OpenAI-kompatible `/audio/speech` API.
 Sobald eine TTS API URL eingetragen ist, erscheint **Sprechtext hinzufügen**. Ist die Option aktiviert, kann pro Kapitel automatisch ein eigener Sprechtext über den LLM-Skill erzeugt und anschließend manuell bearbeitet werden.
 
 Beim SCORM-Export wird jeder vorhandene Kapitel-Sprechtext an die TTS-API gesendet. Die erzeugten Audiodateien werden direkt in das SCORM-ZIP eingebettet und im jeweiligen Kapitel über einen HTML5-Audioplayer angeboten. Zur Laufzeit in Moodle ist dadurch keine TTS-API erforderlich.
+
+## Kursvorgaben
+Im ersten Schritt können vor der Analyse festgelegt werden:
+- gewünschte Länge als Anzahl **Slides / Lerneinheiten** (1–100)
+- freie **weitere Hinweise** an den Konzept-Agenten, z. B. Zielgruppe, didaktischer Stil, Schwerpunktsetzung oder gewünschte Praxisnähe
+
+Der Konzept-Agent erhält diese Angaben explizit und versucht, die Summe aller erzeugten Abschnitte möglichst genau auf die gewünschte Slide-Zahl auszurichten. Die Vorgaben werden außerdem in lokalen Projektständen und Versionen gespeichert.
 
 ## Weitere Funktionen
 - Drag-and-drop-Kapitelreihenfolge
