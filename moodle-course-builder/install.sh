@@ -5,7 +5,7 @@ REPO="CATClaude/VibeCodingChallenge"
 BRANCH="main"
 APP_DIR="moodle-course-builder"
 INSTALL_DIR="${MOODLE_COURSE_BUILDER_DIR:-$HOME/moodle-course-builder}"
-PORT="${PORT:-8090}"
+PORT="8090"
 
 if [[ ! -f "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)/requirements.txt" ]]; then
   echo "Installing Moodle Course Builder to: $INSTALL_DIR"
@@ -38,5 +38,5 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 
 echo
-echo "Moodle Course Builder: http://0.0.0.0:${PORT}"
-exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
+echo "Moodle Course Builder: http://0.0.0.0:8090"
+exec uvicorn app.main:app --host 0.0.0.0 --port 8090
