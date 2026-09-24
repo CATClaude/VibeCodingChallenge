@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Moodle Course Builder V3</title>
+<link rel="stylesheet" href="/static/styles.css"></head>
+<body>
+<header><div class="shell"><h1>Moodle Course Builder V3</h1><div class="small" style="color:#dbe7ff">Dokumente → Konzept → Autorenmodus → Audio → SCORM 1.2</div></div></header>
+<div class="shell layout">
+<aside class="panel sidebar">
+<h3>Projekt</h3><label>Kurstitel</label><input id="courseTitle" value="Neuer Moodle-Kurs">
+<h3>Model API</h3>
+<label>Provider</label><select id="provider"><option value="ollama">Ollama</option><option value="openai">OpenAI-kompatibel</option></select>
+<label>API URL</label><input id="modelUrl" value="http://localhost:11434">
+<label>Modell</label><input id="model" value="qwen3:30b">
+<label>API Key (optional)</label><input id="modelKey" type="password" placeholder="Bearer Token / API Key">
+<div class="row"><button id="testModel" class="secondary">Model API testen</button></div><div id="modelStatus" class="apiStatus"></div>
+<h3>1. Quellen</h3><input id="files" type="file" multiple accept=".pdf,.docx,.txt,.md,.html,.htm"><div class="row"><button id="analyzeBtn">Analysieren</button></div><div id="status" class="status"></div>
+<h3>2. Konzept</h3><div class="row"><button id="conceptBtn" disabled>Konzept erzeugen</button></div><details><summary class="small">Konzept / Analyse ansehen</summary><pre id="debug">Noch keine Daten.</pre></details>
+<h3>Kapitel</h3><div class="row"><button id="addChapter" class="secondary">+ Kapitel</button><button id="deleteChapter" class="danger">Löschen</button></div><div id="chapterList"></div>
+<h3>Projektstände</h3><div class="row"><button id="saveVersion" class="secondary">Version speichern</button><button id="undoBtn" class="secondary">Undo</button><button id="redoBtn" class="secondary">Redo</button></div><select id="versions"><option value="">Gespeicherte Versionen</option></select><div class="row"><button id="loadVersion" class="secondary">Version laden</button></div><div class="row"><button id="saveLocal" class="secondary">Lokal speichern</button><button id="loadLocal" class="secondary">Lokal laden</button></div>
+</aside>
+<main class="panel">
+<div class="tabs"><button class="tab active" data-tab="edit">Bearbeiten</button><button class="tab" data-tab="audio">Audio</button><button class="tab" data-tab="preview">Vorschau</button></div>
+<div id="editView" class="view active">
+<h2 id="chapterHeading">Noch kein Kapitel ausgewählt</h2><label>Kapitelüberschrift</label><input id="chapterTitle"><label>Quellen für diesen Abschnitt</label><div id="sourceTags" class="sourceTags"></div>
+<div class="toolbar"><button data-cmd="bold"><b>B</b></button><button data-cmd="italic"><i>I</i></button><button data-cmd="underline"><u>U</u></button><button data-cmd="insertUnorderedList">• Liste</button><button data-cmd="insertOrderedList">1. Liste</button><button data-block="h2">H2</button><button data-block="h3">H3</button><button id="linkBtn">Link</button></div>
+<div id="editor" contenteditable="true"><p>Erstelle zuerst ein Konzept oder füge ein Kapitel hinzu.</p></div>
+<h3>KI-Bearbeitung</h3><textarea id="instruction" placeholder="z. B. Vereinfache den Text, ergänze ein Praxisbeispiel und erhalte alle Quellenhinweise."></textarea><div class="row"><button id="aiEdit">Anweisung anwenden</button><button id="expandBtn" class="secondary">Aus Quellen ausarbeiten</button></div>
+<h3>Quiz</h3><div class="row"><input id="quizCount" type="number" min="1" max="10" value="3" style="max-width:90px"><button id="quizBtn">Quiz erzeugen</button></div><div id="quizList"></div>
+</div>
+<div id="audioView" class="view">
+<h2>Audio / TTS</h2><div class="audioBox">
+<div class="inline"><div><label>TTS API URL</label><input id="ttsUrl" placeholder="z. B. http://localhost:8000/v1"></div><div><label>TTS Modell</label><input id="ttsModel" value="tts-1"></div></div>
+<div class="inline"><div><label>Stimme</label><input id="ttsVoice" value="alloy"></div><div><label>Format</label><select id="ttsFormat"><option value="mp3">MP3</option><option value="wav">WAV</option><option value="opus">Opus</option></select></div></div>
+<label>TTS API Key (optional)</label><input id="ttsKey" type="password" placeholder="Bearer Token / API Key">
+<div class="row"><button id="testTts" class="secondary">TTS API testen</button></div><div id="ttsStatus" class="apiStatus"></div><audio id="ttsTestAudio" controls style="display:none"></audio>
+<label id="speechToggleWrap" class="toggle" style="display:none"><input id="speechEnabled" type="checkbox"> Sprechtext hinzufügen</label>
+</div>
+<div id="speechEditorWrap" style="display:none;margin-top:16px"><h3>Sprechtext für aktuelles Kapitel</h3><p class="small">Der Text wird vom Sprachmodell erzeugt und kann vor der Vertonung manuell bearbeitet werden.</p><textarea id="speechText" style="min-height:260px"></textarea><div class="row"><button id="generateSpeech">Sprechtext für Kapitel erzeugen</button><button id="generateAllSpeech" class="secondary">Für alle Kapitel erzeugen</button></div></div>
+</div>
+<div id="previewView" class="view"><div id="preview"></div></div>
+<hr><div class="row"><button id="exportBtn">SCORM-1.2-Paket exportieren</button></div>
+</main></div>
+<script src="/static/app.js"></script></body></html>
