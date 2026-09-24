@@ -5,7 +5,7 @@ REPO="CATClaude/VibeCodingChallenge"
 BRANCH="main"
 APP_DIR="moodle-course-builder"
 INSTALL_DIR="${MOODLE_COURSE_BUILDER_DIR:-$HOME/moodle-course-builder}"
-PORT="${PORT:-8080}"
+PORT="${PORT:-8090}"
 
 if [[ ! -f "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)/requirements.txt" ]]; then
   echo "Installing Moodle Course Builder to: $INSTALL_DIR"
