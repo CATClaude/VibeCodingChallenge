@@ -125,7 +125,20 @@ async def analyze(files:List[UploadFile]=File(...), provider:str=Form("ollama"),
 
 @app.post("/api/concept")
 async def concept(payload:dict):
-    prompt="ANALYSE:\n"+json.dumps(payload.get("analysis"),ensure_ascii=False,indent=2)+"\n\nQUELLEN:\n"+payload.get("source_text","")[:150000]
+    settings = payload.get("course_settings") or {}
+    try:
+        slide_count = max(1, min(int(settings.get("slide_count", 10)), 100))
+    except (TypeError, ValueError):
+        slide_count = 10
+    hints = str(settings.get("hints") or "").strip()[:8000]
+    prompt=(
+        "KURSVORGABEN:\n"
+        f"- Gewünschte Länge: ungefähr {slide_count} Slides/Lerneinheiten. "
+        "Erzeuge insgesamt möglichst genau diese Anzahl an sections über alle Module hinweg.\n"
+        f"- Weitere Hinweise: {hints if hints else 'Keine zusätzlichen Hinweise.'}\n\n"
+        "ANALYSE:\n"+json.dumps(payload.get("analysis"),ensure_ascii=False,indent=2)+
+        "\n\nQUELLEN:\n"+payload.get("source_text","")[:150000]
+    )
     out=clean(llm_chat(payload.get("model_api",{}),read_skill("02_course_concept.md"),prompt))
     try:return {"concept":json.loads(out)}
     except Exception:return {"concept":{"raw":out}}
