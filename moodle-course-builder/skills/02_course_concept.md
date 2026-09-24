@@ -1,39 +1,32 @@
-# Skill: Kurskonzept
-Erstelle aus Analyse und Quellenmaterial ein didaktisch sinnvolles Kurskonzept.
+# Skill: Slide-Plan
 
-Anforderungen:
-- die im Prompt genannte gewünschte Anzahl Slides/Lerneinheiten als Zielwert für die Inhalts-Slides einhalten; die Summe aller sections soll diesem Wert möglichst genau entsprechen
-- das Abkürzungsverzeichnis wird NICHT in diese Anzahl eingerechnet; es wird später automatisch als eine zusätzliche letzte Slide ergänzt
-- zusätzliche Benutzerhinweise aus den Kursvorgaben berücksichtigen
-- klare Lernziele
-- modularer Aufbau
-- kurze Lerneinheiten
-- Praxisbeispiele
-- Wissenschecks
-- Quellen pro Abschnitt
-- nur quellenbasierte Fachinhalte
-- keine erfundenen Organisationsregeln
+Erstelle aus Analyse und Quellenmaterial direkt die Struktur eines Lernkurses als einzelne Slides.
+
+## Zwingende Regeln
+- Erzeuge EXAKT die im Prompt verlangte Anzahl an Inhalts-Slides.
+- Erzeuge KEINE Kapitel, Module, Unterkapitel oder verschachtelten Strukturen.
+- Jedes Objekt im Array `slides` entspricht genau einer sichtbaren Kursseite.
+- Die Abkürzungs-Slide gehört NICHT zur angeforderten Anzahl; sie wird automatisch als zusätzliche letzte Inhaltsseite ergänzt.
+- Zusätzliche Benutzerhinweise berücksichtigen.
+- Jede Slide braucht einen prägnanten Titel und einen konkreten Inhaltsplan.
+- Quellen pro Slide angeben.
+- Nur quellenbasierte Fachinhalte verwenden.
+- Keine Fakten erfinden.
 
 Gib ausschließlich valides JSON aus:
 {
-  "course_title":"...",
-  "course_description":"...",
-  "target_audience":"...",
-  "learning_objectives":["..."],
-  "modules":[
+  "course_title": "...",
+  "course_description": "...",
+  "target_audience": "...",
+  "learning_objectives": ["..."],
+  "slides": [
     {
-      "id":"m1",
-      "title":"...",
-      "objective":"...",
-      "sections":[
-        {
-          "id":"s1",
-          "title":"...",
-          "content_plan":"...",
-          "interaction":"text|example|quiz|checklist",
-          "sources":["Dateiname"]
-        }
-      ]
+      "id": "slide_1",
+      "number": 1,
+      "title": "...",
+      "content_plan": "...",
+      "interaction": "text|example|checklist",
+      "sources": ["Dateiname"]
     }
   ]
 }
