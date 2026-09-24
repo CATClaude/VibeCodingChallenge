@@ -173,24 +173,51 @@ SCORM_API='''var scorm={api:null,find:function(w){var n=0;while(w&&!w.API&&w.par
 COURSE_JS='''function gradeQuiz(){const qs=[...document.querySelectorAll(".scorm-question")];if(!qs.length){scorm.finish(100);alert("Kurs abgeschlossen.");return;}let correct=0;qs.forEach(q=>{const s=q.querySelector("input[type=radio]:checked"),fb=q.querySelector(".feedback");if(s){if(s.dataset.correct==="true"){correct++;fb.textContent="Richtig. "+(q.dataset.explanation||"");}else fb.textContent="Nicht richtig. "+(q.dataset.explanation||"");}else fb.textContent="Bitte eine Antwort auswählen.";});const score=Math.round(correct/qs.length*100);document.getElementById("scoreOut").textContent=`Ergebnis: ${correct}/${qs.length} (${score} %)`;scorm.finish(score);}'''
 COURSE_CSS=''':root{--bg:#f4f6fa;--text:#1f2937;--accent:#2457d6;--border:#dbe2ea}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;line-height:1.65}header{background:linear-gradient(135deg,#172f66,#3275e8);color:#fff;padding:38px 20px}header>div,main{width:min(980px,calc(100% - 30px));margin:auto}main{background:#fff;margin-top:24px;margin-bottom:50px;border:1px solid var(--border);border-radius:18px;padding:30px}nav{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--border);padding:10px 16px;z-index:5;overflow:auto;white-space:nowrap}nav a{display:inline-block;margin-right:14px;color:var(--accent);text-decoration:none}section{scroll-margin-top:65px;padding-top:6px}.sourcebox,.note,.example{padding:12px 14px;border-radius:10px;margin:14px 0}.sourcebox{background:#f8fafc;border:1px solid var(--border);font-size:.9rem;color:#64748b}.note{background:#eef3ff;border-left:5px solid var(--accent)}.example{background:#ecf9f1;border-left:5px solid #16804c}.chapter-audio{width:100%;margin:12px 0 18px}.abbr-table{width:100%;border-collapse:collapse;margin:14px 0}.abbr-table th,.abbr-table td{border:1px solid var(--border);padding:8px;text-align:left}.quiz{margin-top:30px;border-top:1px solid var(--border);padding-top:20px}.scorm-question{margin:20px 0;padding:16px;border:1px solid var(--border);border-radius:12px}.scorm-question label{display:block;padding:6px}.feedback{margin-top:8px;font-weight:600}button{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer}@media(max-width:700px){main{padding:18px}}'''
 
-def extract_abbreviations(sections):
-    text_parts = []
+def course_plaintext(sections):
+    parts = []
     for section in sections:
         title = str(section.get("title", ""))
         content = re.sub(r"<[^>]+>", " ", str(section.get("html", "")))
         speech = str(section.get("speech_text", ""))
-        text_parts.extend([title, content, speech])
-    text = " ".join(text_parts)
+        parts.extend([title, content, speech])
+    return re.sub(r"\s+", " ", " ".join(parts)).strip()
+
+def extract_abbreviation_candidates(sections):
+    text = course_plaintext(sections)
     candidates = re.findall(r"\b[A-ZÄÖÜ][A-ZÄÖÜ0-9.-]{1,9}\b", text)
-    stop = {"HTML","CSS","HTTP","HTTPS","SCORM","API","TTS","KI","AI","PDF","DOCX","TXT","JSON","URL","UTF"}
     seen = []
     for abbr in candidates:
         clean_abbr = abbr.strip(".-")
-        if len(clean_abbr) < 2:
-            continue
-        if clean_abbr not in seen:
+        if len(clean_abbr) >= 2 and clean_abbr not in seen:
             seen.append(clean_abbr)
     return sorted(seen)
+
+def build_abbreviation_directory(sections, model_api):
+    candidates = extract_abbreviation_candidates(sections)
+    if not candidates:
+        return []
+    plain = course_plaintext(sections)[:100000]
+    prompt = (
+        "KURSINHALT:\n" + plain +
+        "\n\nERKANNTE ABKÜRZUNGEN:\n" + ", ".join(candidates) +
+        "\n\nErstelle daraus das Abkürzungsverzeichnis. Nimm nur Abkürzungen auf, "
+        "die im Kurs tatsächlich als Abkürzungen verwendet werden. Die Langform darf nur "
+        "aus dem Kursinhalt sicher ableitbar sein. Wenn sie nicht sicher ableitbar ist, "
+        "setze meaning auf 'Im Kursmaterial nicht eindeutig ausgeschrieben'."
+    )
+    try:
+        out = clean(llm_chat(model_api, read_skill("06_abbreviation_directory.md"), prompt))
+        data = json.loads(out)
+        items = data.get("abbreviations", [])
+        result = []
+        for item in items:
+            abbr = str(item.get("abbr", "")).strip()
+            meaning = str(item.get("meaning", "")).strip()
+            if abbr and abbr in candidates:
+                result.append({"abbr": abbr, "meaning": meaning or "Im Kursmaterial nicht eindeutig ausgeschrieben"})
+        return sorted(result, key=lambda x: x["abbr"].casefold())
+    except Exception:
+        return [{"abbr": a, "meaning": "Im Kursmaterial nicht eindeutig ausgeschrieben"} for a in candidates]
 
 def render_quiz(questions):
     blocks=[]
@@ -214,8 +241,11 @@ async def export_package(payload:dict):
         if tts_enabled and speech:
             audio_bytes,fmt=tts_call(tts_cfg,speech); ext="mp3" if fmt=="mp3" else re.sub(r"[^a-z0-9]","",fmt) or "mp3"; fn=f"audio_{i}.{ext}"; (outdir/fn).write_bytes(audio_bytes);extra.append(fn);audio_html=f'<audio class="chapter-audio" controls preload="metadata" src="{fn}"></audio>'
         body.append(f'<section id="{sid}"><h2>{html.escape(st)}</h2>{audio_html}{s.get("html","")}</section>')
-    abbreviations = extract_abbreviations(sections)
-    abbr_rows = ''.join(f'<tr><td><strong>{html.escape(a)}</strong></td><td></td></tr>' for a in abbreviations)
+    abbreviations = build_abbreviation_directory(sections, payload.get("model_api", {}))
+    abbr_rows = ''.join(
+        f'<tr><td><strong>{html.escape(item["abbr"])}</strong></td><td>{html.escape(item["meaning"])}</td></tr>'
+        for item in abbreviations
+    )
     abbr_html = '<section id="abkuerzungen"><h2>Abkürzungsverzeichnis</h2>'
     if abbreviations:
         abbr_html += '<table class="abbr-table"><thead><tr><th>Abkürzung</th><th>Bedeutung</th></tr></thead><tbody>' + abbr_rows + '</tbody></table>'
