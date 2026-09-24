@@ -171,7 +171,26 @@ async def generate_speech(payload:dict):
 
 SCORM_API='''var scorm={api:null,find:function(w){var n=0;while(w&&!w.API&&w.parent&&w.parent!==w&&n<10){w=w.parent;n++;}return w&&w.API?w.API:null;},init:function(){this.api=this.find(window);if(this.api){try{this.api.LMSInitialize("");var s=this.api.LMSGetValue("cmi.core.lesson_status");if(!s||s==="not attempted")this.api.LMSSetValue("cmi.core.lesson_status","incomplete");}catch(e){}}},finish:function(score){if(!this.api)return;try{this.api.LMSSetValue("cmi.core.score.raw",String(score));this.api.LMSSetValue("cmi.core.score.min","0");this.api.LMSSetValue("cmi.core.score.max","100");this.api.LMSSetValue("cmi.core.lesson_status",score>=70?"passed":"completed");this.api.LMSCommit("");}catch(e){}},close:function(){if(this.api){try{this.api.LMSFinish("");}catch(e){}}}};window.addEventListener("load",function(){scorm.init();});window.addEventListener("beforeunload",function(){scorm.close();});'''
 COURSE_JS='''function gradeQuiz(){const qs=[...document.querySelectorAll(".scorm-question")];if(!qs.length){scorm.finish(100);alert("Kurs abgeschlossen.");return;}let correct=0;qs.forEach(q=>{const s=q.querySelector("input[type=radio]:checked"),fb=q.querySelector(".feedback");if(s){if(s.dataset.correct==="true"){correct++;fb.textContent="Richtig. "+(q.dataset.explanation||"");}else fb.textContent="Nicht richtig. "+(q.dataset.explanation||"");}else fb.textContent="Bitte eine Antwort auswählen.";});const score=Math.round(correct/qs.length*100);document.getElementById("scoreOut").textContent=`Ergebnis: ${correct}/${qs.length} (${score} %)`;scorm.finish(score);}'''
-COURSE_CSS=''':root{--bg:#f4f6fa;--text:#1f2937;--accent:#2457d6;--border:#dbe2ea}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;line-height:1.65}header{background:linear-gradient(135deg,#172f66,#3275e8);color:#fff;padding:38px 20px}header>div,main{width:min(980px,calc(100% - 30px));margin:auto}main{background:#fff;margin-top:24px;margin-bottom:50px;border:1px solid var(--border);border-radius:18px;padding:30px}nav{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--border);padding:10px 16px;z-index:5;overflow:auto;white-space:nowrap}nav a{display:inline-block;margin-right:14px;color:var(--accent);text-decoration:none}section{scroll-margin-top:65px;padding-top:6px}.sourcebox,.note,.example{padding:12px 14px;border-radius:10px;margin:14px 0}.sourcebox{background:#f8fafc;border:1px solid var(--border);font-size:.9rem;color:#64748b}.note{background:#eef3ff;border-left:5px solid var(--accent)}.example{background:#ecf9f1;border-left:5px solid #16804c}.chapter-audio{width:100%;margin:12px 0 18px}.quiz{margin-top:30px;border-top:1px solid var(--border);padding-top:20px}.scorm-question{margin:20px 0;padding:16px;border:1px solid var(--border);border-radius:12px}.scorm-question label{display:block;padding:6px}.feedback{margin-top:8px;font-weight:600}button{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer}@media(max-width:700px){main{padding:18px}}'''
+COURSE_CSS=''':root{--bg:#f4f6fa;--text:#1f2937;--accent:#2457d6;--border:#dbe2ea}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;line-height:1.65}header{background:linear-gradient(135deg,#172f66,#3275e8);color:#fff;padding:38px 20px}header>div,main{width:min(980px,calc(100% - 30px));margin:auto}main{background:#fff;margin-top:24px;margin-bottom:50px;border:1px solid var(--border);border-radius:18px;padding:30px}nav{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--border);padding:10px 16px;z-index:5;overflow:auto;white-space:nowrap}nav a{display:inline-block;margin-right:14px;color:var(--accent);text-decoration:none}section{scroll-margin-top:65px;padding-top:6px}.sourcebox,.note,.example{padding:12px 14px;border-radius:10px;margin:14px 0}.sourcebox{background:#f8fafc;border:1px solid var(--border);font-size:.9rem;color:#64748b}.note{background:#eef3ff;border-left:5px solid var(--accent)}.example{background:#ecf9f1;border-left:5px solid #16804c}.chapter-audio{width:100%;margin:12px 0 18px}.abbr-table{width:100%;border-collapse:collapse;margin:14px 0}.abbr-table th,.abbr-table td{border:1px solid var(--border);padding:8px;text-align:left}.quiz{margin-top:30px;border-top:1px solid var(--border);padding-top:20px}.scorm-question{margin:20px 0;padding:16px;border:1px solid var(--border);border-radius:12px}.scorm-question label{display:block;padding:6px}.feedback{margin-top:8px;font-weight:600}button{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer}@media(max-width:700px){main{padding:18px}}'''
+
+def extract_abbreviations(sections):
+    text_parts = []
+    for section in sections:
+        title = str(section.get("title", ""))
+        content = re.sub(r"<[^>]+>", " ", str(section.get("html", "")))
+        speech = str(section.get("speech_text", ""))
+        text_parts.extend([title, content, speech])
+    text = " ".join(text_parts)
+    candidates = re.findall(r"\b[A-ZÄÖÜ][A-ZÄÖÜ0-9.-]{1,9}\b", text)
+    stop = {"HTML","CSS","HTTP","HTTPS","SCORM","API","TTS","KI","AI","PDF","DOCX","TXT","JSON","URL","UTF"}
+    seen = []
+    for abbr in candidates:
+        clean_abbr = abbr.strip(".-")
+        if len(clean_abbr) < 2:
+            continue
+        if clean_abbr not in seen:
+            seen.append(clean_abbr)
+    return sorted(seen)
 
 def render_quiz(questions):
     blocks=[]
@@ -186,6 +205,7 @@ def render_quiz(questions):
 @app.post("/api/export")
 async def export_package(payload:dict):
     title=payload.get("title","Moodle Lernkurs"); sections=payload.get("sections",[]); quiz=payload.get("quiz",[]); tts_enabled=bool(payload.get("tts_enabled")); tts_cfg=payload.get("tts_api",{})
+    course_settings = payload.get("course_settings") or {}
     safe=re.sub(r"[^a-zA-Z0-9_-]+","_",title).strip("_") or "kurs"; outdir=WORK/(safe+"_scorm")
     if outdir.exists():shutil.rmtree(outdir)
     outdir.mkdir(parents=True); nav=[];body=[];extra=[]
@@ -194,7 +214,16 @@ async def export_package(payload:dict):
         if tts_enabled and speech:
             audio_bytes,fmt=tts_call(tts_cfg,speech); ext="mp3" if fmt=="mp3" else re.sub(r"[^a-z0-9]","",fmt) or "mp3"; fn=f"audio_{i}.{ext}"; (outdir/fn).write_bytes(audio_bytes);extra.append(fn);audio_html=f'<audio class="chapter-audio" controls preload="metadata" src="{fn}"></audio>'
         body.append(f'<section id="{sid}"><h2>{html.escape(st)}</h2>{audio_html}{s.get("html","")}</section>')
-    full='<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+f'<title>{html.escape(title)}</title><link rel="stylesheet" href="style.css"></head><body><header><div><h1>{html.escape(title)}</h1></div></header><nav>{"".join(nav)}</nav><main>{"".join(body)}{render_quiz(quiz)}</main><script src="scorm.js"></script><script src="course.js"></script></body></html>'
+    abbreviations = extract_abbreviations(sections)
+    abbr_rows = ''.join(f'<tr><td><strong>{html.escape(a)}</strong></td><td></td></tr>' for a in abbreviations)
+    abbr_html = '<section id="abkuerzungen"><h2>Abkürzungsverzeichnis</h2>'
+    if abbreviations:
+        abbr_html += '<table class="abbr-table"><thead><tr><th>Abkürzung</th><th>Bedeutung</th></tr></thead><tbody>' + abbr_rows + '</tbody></table>'
+    else:
+        abbr_html += '<p>In diesem Kurs wurden keine Abkürzungen erkannt.</p>'
+    abbr_html += '</section>'
+    nav.append('<a href="#abkuerzungen">Abkürzungen</a>')
+    full='<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+f'<title>{html.escape(title)}</title><link rel="stylesheet" href="style.css"></head><body><header><div><h1>{html.escape(title)}</h1></div></header><nav>{"".join(nav)}</nav><main>{"".join(body)}{abbr_html}{render_quiz(quiz)}</main><script src="scorm.js"></script><script src="course.js"></script></body></html>'
     file_nodes=''.join(f'<file href="{html.escape(f)}"/>' for f in extra)
     manifest='<?xml version="1.0" encoding="UTF-8"?>\n'+f'<manifest identifier="MANIFEST-{safe}" version="1.0" xmlns="http://www.imsproject.org/xsd/imscp_rootv1p1p2" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_rootv1p2"><metadata><schema>ADL SCORM</schema><schemaversion>1.2</schemaversion></metadata><organizations default="ORG"><organization identifier="ORG"><title>{html.escape(title)}</title><item identifier="ITEM" identifierref="RES"><title>{html.escape(title)}</title></item></organization></organizations><resources><resource identifier="RES" type="webcontent" adlcp:scormtype="sco" href="index.html"><file href="index.html"/><file href="style.css"/><file href="scorm.js"/><file href="course.js"/>{file_nodes}</resource></resources></manifest>'
     (outdir/"index.html").write_text(full,encoding="utf-8");(outdir/"style.css").write_text(COURSE_CSS,encoding="utf-8");(outdir/"scorm.js").write_text(SCORM_API,encoding="utf-8");(outdir/"course.js").write_text(COURSE_JS,encoding="utf-8");(outdir/"imsmanifest.xml").write_text(manifest,encoding="utf-8")
