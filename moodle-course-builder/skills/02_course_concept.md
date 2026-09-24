@@ -2,6 +2,8 @@
 Erstelle aus Analyse und Quellenmaterial ein didaktisch sinnvolles Kurskonzept.
 
 Anforderungen:
+- die im Prompt genannte gewünschte Anzahl Slides/Lerneinheiten als Zielwert einhalten; die Summe aller sections soll diesem Wert möglichst genau entsprechen
+- zusätzliche Benutzerhinweise aus den Kursvorgaben berücksichtigen
 - klare Lernziele
 - modularer Aufbau
 - kurze Lerneinheiten
