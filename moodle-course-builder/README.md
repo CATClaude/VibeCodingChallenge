@@ -42,7 +42,7 @@ Im ersten Schritt können vor der Analyse festgelegt werden:
 - gewünschte Länge als Anzahl **Slides / Lerneinheiten** (1–100)
 - freie **weitere Hinweise** an den Konzept-Agenten, z. B. Zielgruppe, didaktischer Stil, Schwerpunktsetzung oder gewünschte Praxisnähe
 
-Der Konzept-Agent erhält diese Angaben explizit und versucht, die Summe aller erzeugten Abschnitte möglichst genau auf die gewünschte Slide-Zahl auszurichten. Zusätzlich wird beim SCORM-Export automatisch eine weitere letzte Slide **Abkürzungsverzeichnis** ergänzt. Damit gilt: gewünschte Slide-Zahl + 1 Abkürzungs-Slide. Die Abkürzungen werden aus den tatsächlich verwendeten Kursinhalten gesammelt, dedupliziert und alphabetisch ausgegeben. Die Vorgaben werden außerdem in lokalen Projektständen und Versionen gespeichert.
+Der Konzept-Agent erhält diese Angaben explizit und versucht, die Summe aller erzeugten Abschnitte möglichst genau auf die gewünschte Slide-Zahl auszurichten. Zusätzlich wird beim SCORM-Export automatisch eine weitere letzte Slide **Abkürzungsverzeichnis** ergänzt. Damit gilt: gewünschte Slide-Zahl + 1 Abkürzungs-Slide. Die Abkürzungen werden aus den tatsächlich verwendeten Kursinhalten gesammelt, dedupliziert und alphabetisch ausgegeben. Die KI ergänzt die Langform nur, wenn sie aus dem Kursmaterial sicher ableitbar ist; andernfalls wird die Bedeutung als nicht eindeutig ausgeschrieben markiert. Die Vorgaben werden außerdem in lokalen Projektständen und Versionen gespeichert.
 
 ## Weitere Funktionen
 - Drag-and-drop-Kapitelreihenfolge
