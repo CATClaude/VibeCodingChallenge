@@ -57,7 +57,7 @@ Optional OpenAI-kompatible `/audio/speech` API. Wenn aktiviert, erzeugt das Syst
 curl -fsSL https://raw.githubusercontent.com/CATClaude/VibeCodingChallenge/main/moodle-course-builder/install.sh | bash
 ```
 
-Standardport:
+Fest verwendeter Port:
 
 ```text
 8090
@@ -69,11 +69,6 @@ Danach:
 http://SERVER-IP:8090
 ```
 
-Alternativer Port:
-
-```bash
-PORT=9000 curl -fsSL https://raw.githubusercontent.com/CATClaude/VibeCodingChallenge/main/moodle-course-builder/install.sh | bash
-```
 
 ## Moodle
 
